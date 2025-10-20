@@ -5,6 +5,9 @@ import tkinter as tk
 from tkinter import filedialog
 from PIL import Image, ImageSequence
 from Algorithms.breadth import ejecutar_busqueda_amplitud, calcular_costo_movimiento
+from Algorithms.greedy import greedy_search
+from Algorithms.a_star import a_star
+from Algorithms.objects import Node
 
  
 
@@ -896,6 +899,70 @@ while running:
                             print(f"Camino encontrado: {len(algorithm_path)} pasos")
                             print(f"Costo total: {result['total_cost']}")
                             current_state = SIMULATION_SCREEN
+                        else:
+                            error_msg = result.get("error", "Error desconocido")
+                            print(f"Error: {error_msg}")
+                    if selected_algorithm == "greedy":
+                        # Ejecutar búsqueda voraz
+                        print(f"Ejecutando algoritmo: {selected_algorithm}")
+                        result = greedy_search(world)
+                        
+                        if result and result.get("success"):
+                            # Guardar copia del mundo original
+                            original_world = [row[:] for row in world]  # Copia profunda
+                            
+                            algorithm_path = result["path"]
+                            algorithm_result = result
+                            current_step = 0
+                            collected_samples = set()
+                            is_animating = True
+                            current_cost = 0  # Inicializar costo en 0
+                            has_ship = False  # Inicializar sin nave
+                            fuel_left = 0     # Sin combustible inicialmente
+                            current_sprite_index = 0  # Resetear animación de sprites
+                            astronaut_direction = "right"  # Dirección inicial
+                            animation_completed = False  # Resetear estado de animación
+                            
+                            # Encontrar posición inicial del astronauta
+                            for row in range(10):
+                                for col in range(10):
+                                    if world[row][col] == 2:
+                                        astronaut_pos = (row, col)
+                                        break
+                            
+                            print(f"Camino encontrado: {len(algorithm_path)} pasos")
+                            print(f"Costo total: {result['total_cost']}")
+                            current_state = SIMULATION_SCREEN
+                    if selected_algorithm == "a_star":
+                        print(f"Ejecutando algoritmo: {selected_algorithm}")
+                        result = a_star(world)
+                            
+                        if result and result.get("success"):
+                            # Guardar copia del mundo original
+                            original_world = [row[:] for row in world]  # Copia profunda
+                                
+                            algorithm_path = result["path"]
+                            algorithm_result = result
+                            current_step = 0
+                            collected_samples = set()
+                            is_animating = True
+                            current_cost = 0  # Inicializar costo en 0
+                            has_ship = False  # Inicializar sin nave
+                            fuel_left = 0     # Sin combustible inicialmente
+                            current_sprite_index = 0  # Resetear animación de sprites
+                            astronaut_direction = "right"  # Dirección inicial
+                            animation_completed = False  # Resetear estado de animación
+                                
+                                # Encontrar posición inicial del astronauta
+                            for row in range(10):
+                                for col in range(10):
+                                    if world[row][col] == 2:
+                                        astronaut_pos = (row, col)
+                                        break
+                                
+                            print(f"Camino encontrado: {len(algorithm_path)} pasos")
+                            print(f"Costo total: {result['total_cost']}")
+                            current_state = SIMULATION_SCREEN    
                         else:
                             error_msg = result.get("error", "Error desconocido")
                             print(f"Error: {error_msg}")
