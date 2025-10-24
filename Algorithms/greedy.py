@@ -8,7 +8,7 @@ from Algorithms.complement import costMove, reconstruct_path,heuristics, heurist
 def greedy_search(grid):
     nodes = []
     visited = set()
-
+    collected_samples = set()
 
     root = Node(findAstro(grid))
     root.hPost = heuristics(root.state, findSampling(grid))
@@ -37,7 +37,7 @@ def greedy_search(grid):
                 parent=parent_node,
                 action=action,
                 hPost = hPost,
-                h = h,
+                h = h/2,
                 path_cost=parent_node.path_cost + 0.5,
                 rocket=rocket_status,
                 rocketFuel=rocket_fuel
@@ -48,7 +48,7 @@ def greedy_search(grid):
                 parent=parent_node,
                 action=action,
                 hPost = hPost,
-                h = h,
+                h = h/2,
                 path_cost=parent_node.path_cost + costMove(grid, new_pos),
                 rocket=rocket_status,
                 rocketFuel=rocket_fuel
@@ -71,16 +71,18 @@ def greedy_search(grid):
         if current.state in visited:
             continue
         visited.add(current.state)
+        
+        if current.state in collected_samples:
+            continue
+
   
-        if grid[current.state[0]][current.state[1]] == 6:
+        if current.state in findSampling(grid) and current.state not in collected_samples:
+            collected_samples.add(current.state)
 
-            grid[current.state[0]][current.state[1]] = 0
-
-            remaining = findSampling(grid)
-            if not remaining:
-                pathA=path_real(findAstro(grid)[0], findAstro(grid)[1], reconstruct_path(current))
-                return {"success":True,"path":pathA,"total_cost":current.path_cost,"algorithm":"greedy_search"}
-
+            if len(collected_samples) == len(findSampling(grid)):
+                pathA = path_real(findAstro(grid)[0], findAstro(grid)[1], reconstruct_path(current))
+                return {"success": True, "path": pathA, "total_cost": current.path_cost, "algorithm": "greedy_search"}
+            
             rocket_status = current.rocket
             rocket_fuel = current.rocketFuel
             nodes.clear()
@@ -89,7 +91,7 @@ def greedy_search(grid):
             current.rocketFuel = rocket_fuel
 
 
-            current.hPost = heuristics(current.state, remaining)  # ahora remaining no está vacío
+            current.hPost = heuristics(current.state, [p for p in findSampling(grid) if p not in collected_samples])
             current.h = heuristic(current.state[0], current.state[1], current.hPost)
             #Arriba
             if in_bounds(grid, current.state[0]-1, current.state[1]) and grid[current.state[0]-1][current.state[1]] != 1:
