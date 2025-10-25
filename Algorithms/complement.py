@@ -1,3 +1,18 @@
+# --------------------------------------------------------
+# Proyecto de inteligencia Artificial - Smart astronaut
+# Integrantes: 
+# Dylan Fernando Morales Rojas (2338330)
+# Johan Andres Ceballos Tabarez (2372229)
+#
+# Universidad: Universidad del Valle
+# Profesor: Oscar Bedoya
+#
+# Fecha de creación: 23 de septiembre del 2025
+# Última modificación: 24 de octubre del 2025
+#
+# Archivo: complement.py
+# --------------------------------------------------------
+
 TERRAIN_COST = {
     0: 1,   # libre
     2: 1,   # astronauta
@@ -59,6 +74,7 @@ def heuristic(posAstroI,posAstroJ, sample):
 
 def costMove(grid,posAstro):
     return TERRAIN_COST[grid[posAstro[0]][posAstro[1]]]
+
 
 
 def reconstruct_path(node):

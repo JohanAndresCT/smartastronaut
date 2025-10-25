@@ -1,3 +1,18 @@
+# --------------------------------------------------------
+# Proyecto de inteligencia Artificial - Smart astronaut
+# Integrantes: 
+# Dylan Fernando Morales Rojas (2338330)
+# Johan Andres Ceballos Tabarez (2372229)
+#
+# Universidad: Universidad del Valle
+# Profesor: Oscar Bedoya
+#
+# Fecha de creación: 23 de septiembre del 2025
+# Última modificación: 24 de octubre del 2025
+#
+# Archivo: objects.py
+# --------------------------------------------------------
+
 class Node:
     def __init__(self, state, parent=None, h=None, action=None,hPost=None,f=None,
                  path_cost=0, rocket=False, rocketFuel=0):

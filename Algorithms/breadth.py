@@ -1,3 +1,18 @@
+# --------------------------------------------------------
+# Proyecto de inteligencia Artificial - Smart astronaut
+# Integrantes: 
+# Dylan Fernando Morales Rojas (2338330)
+# Johan Andres Ceballos Tabarez (2372229)
+#
+# Universidad: Universidad del Valle
+# Profesor: Oscar Bedoya
+#
+# Fecha de creación: 23 de septiembre del 2025
+# Última modificación: 24 de octubre del 2025
+#
+# Archivo: breadth.py
+# --------------------------------------------------------
+
 from collections import deque
 
 """
@@ -31,8 +46,13 @@ def search_path(world, start_pos, samples_positions):
     # Movimientos posibles: arriba, abajo, izquierda, derecha
     movements = [(-1, 0), (1, 0), (0, -1), (0, 1)]
     
+    nodes_expanded = 0
+    max_depth = 0
+
     while queue:
         current_pos, samples_collected, fuel_left, has_ship, path, total_cost = queue.popleft()
+        nodes_expanded += 1
+        max_depth = max(max_depth, len(path) - 1)
         
         # Crear clave única para el estado visitado
         state_key = (current_pos, samples_collected, fuel_left, has_ship)
@@ -43,7 +63,8 @@ def search_path(world, start_pos, samples_positions):
         
         # ¿Hemos recolectado todas las muestras?
         if len(samples_collected) == len(samples_positions):
-            return path, total_cost, samples_collected
+                # Incluir métricas
+                return path, total_cost, samples_collected, nodes_expanded, max_depth
         
         # Explorar todos los movimientos posibles
         for dr, dc in movements:
@@ -58,23 +79,27 @@ def search_path(world, start_pos, samples_positions):
             if world[new_row][new_col] == 1:  # Obstáculo
                 continue
             
-            # Actualizar combustible y nave ANTES de calcular costo
+            # Calcular costo del movimiento según el terreno y el estado PREVIO (antes de la transición)
+            terrain_type = world[new_row][new_col]
+            movement_cost = calculate_movement_cost(terrain_type, has_ship, fuel_left > 0)
+
+            # Actualizar combustible y nave para el NUEVO estado después del movimiento
             new_fuel = fuel_left
             new_has_ship = has_ship
-            
-            # Verificar si llega a la nave
+
+            # Verificar si llega a la nave (boarding da fuel pero no reduce el costo de esta transición)
             if new_pos == ship_pos and not has_ship:
                 new_has_ship = True
                 new_fuel = 20  # Combustible completo
                 print(f"¡Astronauta subió a la nave en {new_pos}! Combustible: {new_fuel}")
-            
-            # Actualizar combustible si tiene nave
-            if new_has_ship and new_fuel > 0:
-                new_fuel = fuel_left - 1
-            
-            # Calcular costo del movimiento según el terreno y si tiene nave con combustible
-            terrain_type = world[new_row][new_col]
-            movement_cost = calcular_costo_movimiento(terrain_type, new_has_ship, new_fuel > 0)
+
+            # Actualizar combustible si ya tenía nave (consumir 1 unidad para el nuevo estado)
+            if has_ship:
+                if fuel_left > 0:
+                    new_fuel = fuel_left - 1
+                else:
+                    new_has_ship = False
+                    new_fuel = 0
             
             # Verificar si recoge una muestra
             new_samples = samples_collected
@@ -103,26 +128,26 @@ def search_path(world, start_pos, samples_positions):
         float: costo del movimiento
 """
 
-def calcular_costo_movimiento(terrain_type, has_ship, has_fuel):
-    # Con nave y combustible: costo reducido de 0.5 para cualquier terreno
+def calculate_movement_cost(terrain_type, has_ship, has_fuel):
+    # With ship and fuel: reduced cost of 0.5 for any terrain
     if has_ship and has_fuel:
         return 0.5
-    
-    # Costos normales a pie según el tipo de terreno
-    if terrain_type == 0:    # Terreno libre
+
+    # Normal walking costs according to terrain type
+    if terrain_type == 0:    # Free terrain
         return 1
-    elif terrain_type == 2:  # Posición del astronauta (terreno libre)
-        return 1  
-    elif terrain_type == 3:  # Terreno rocoso
+    elif terrain_type == 2:  # Astronaut position (free terrain)
+        return 1
+    elif terrain_type == 3:  # Rocky terrain
         return 3
-    elif terrain_type == 4:  # Terreno volcánico
+    elif terrain_type == 4:  # Volcanic terrain
         return 5
-    elif terrain_type == 5:  # Nave (sobre terreno libre)
+    elif terrain_type == 5:  # Ship (on free terrain)
         return 1
-    elif terrain_type == 6:  # Muestra (sobre terreno libre)
+    elif terrain_type == 6:  # Sample (on free terrain)
         return 1
     else:
-        return 1  # Por defecto (terreno libre)
+        return 1  # Default (free terrain)
 
 """
     Encuentra las posiciones del astronauta, nave y muestras en el mundo
@@ -130,21 +155,20 @@ def calcular_costo_movimiento(terrain_type, has_ship, has_fuel):
     Returns:
         tuple: (pos_astronauta, pos_nave, lista_muestras)
 """
-
-def encontrar_posiciones_especiales(world):
+def find_special_positions(world):
     astronaut_pos = None
     ship_pos = None
     samples = []
-    
+
     for row in range(10):
         for col in range(10):
-            if world[row][col] == 2:  # Astronauta
+            if world[row][col] == 2:  # Astronaut
                 astronaut_pos = (row, col)
-            elif world[row][col] == 5:  # Nave
+            elif world[row][col] == 5:  # Ship
                 ship_pos = (row, col)
-            elif world[row][col] == 6:  # Muestra
+            elif world[row][col] == 6:  # Sample
                 samples.append((row, col))
-    
+
     return astronaut_pos, ship_pos, samples
 
 """
@@ -156,9 +180,9 @@ def encontrar_posiciones_especiales(world):
     Returns:
         dict: resultado de la búsqueda con camino, costo y estadísticas
 """
-def ejecutar_busqueda_amplitud(world):
-    # Encontrar posiciones iniciales
-    astronaut_pos, ship_pos, samples = encontrar_posiciones_especiales(world)
+def execute_breadth_search(world):
+    # Find initial positions
+    astronaut_pos, ship_pos, samples = find_special_positions(world)
     
     if not astronaut_pos:
         return {"error": "No se encontró al astronauta en el mundo"}
@@ -171,43 +195,61 @@ def ejecutar_busqueda_amplitud(world):
     print(f"Muestras en: {samples}")
     print("Iniciando búsqueda por amplitud...")
     
-    # Ejecutar búsqueda
+    # Run the search
     result = search_path(world, astronaut_pos, samples)
     
     if result:
-        path, total_cost, samples_collected = result
+    # Desempaquetar resultado con métricas opcionales
+        if len(result) == 3:
+            path, total_cost, samples_collected = result
+            nodes_expanded = None
+            max_depth = None
+        else:
+            path, total_cost, samples_collected, nodes_expanded, max_depth = result
         
-        print(f"\n🎯 ¡CAMINO ENCONTRADO!")
-        print(f"📍 Pasos totales: {len(path) - 1}")
-        print(f"💰 Costo total acumulado: {total_cost}")
-        print(f"🔬 Muestras recolectadas: {len(samples_collected)}/{len(samples)}")
-        print(f"🛤️  Camino completo: {path}")
+        print(f"\n ¡CAMINO ENCONTRADO!")
+        print(f" Pasos totales: {len(path) - 1}")
+        print(f"Costo total acumulado: {total_cost}")
+        print(f" Muestras recolectadas: {len(samples_collected)}/{len(samples)}")
+        print(f" Camino completo: {path}")
         
-        # Mostrar desglose de costos paso a paso
-        print(f"\n📊 DESGLOSE DE COSTOS:")
-        costo_acumulado = 0
+        # Mostrar desglose de costos paso a paso usando la misma lógica que el algoritmo
+        print(f"\n DESGLOSE DE COSTOS (cálculo real con nave/combustible):")
+        costo_acumulado = 0.0
+        has_ship = False
+        fuel = 0
+
         for i in range(1, len(path)):
+            prev = path[i-1]
             pos = path[i]
             terrain = world[pos[0]][pos[1]]
-            
-            # Simular cálculo de costo (simplificado para el desglose)
-            if terrain == 0 or terrain == 2 or terrain == 5 or terrain == 6:
-                costo_paso = 1
-                tipo_terreno = "Libre"
-            elif terrain == 3:
-                costo_paso = 3
+
+            # Calculate step cost using the PREVIOUS state (has_ship, fuel>0)
+            step_cost = calculate_movement_cost(terrain, has_ship, fuel > 0)
+
+            # Mapear tipo de terreno para visualización
+            if terrain == 3:
                 tipo_terreno = "Rocoso"
             elif terrain == 4:
-                costo_paso = 5  
                 tipo_terreno = "Volcánico"
             else:
-                costo_paso = 1
                 tipo_terreno = "Libre"
-            
-            costo_acumulado += costo_paso
-            print(f"  Paso {i}: {path[i-1]} → {pos} | {tipo_terreno} (+{costo_paso}) | Total: {costo_acumulado}")
+
+            costo_acumulado += step_cost
+            print(f"  Paso {i}: {prev} → {pos} | {tipo_terreno} (+{step_cost}) | Total: {costo_acumulado}")
+
+            # Actualizar estado tras moverse al nuevo estado (boarding/consumo)
+            if not has_ship and terrain == 5:
+                has_ship = True
+                fuel = 20
+            elif has_ship:
+                if fuel > 0:
+                    fuel -= 1
+                else:
+                    has_ship = False
+                    fuel = 0
         
-        return {
+        out = {
             "success": True,
             "path": path,
             "total_cost": total_cost,
@@ -215,6 +257,10 @@ def ejecutar_busqueda_amplitud(world):
             "steps": len(path) - 1,
             "algorithm": "Búsqueda por Amplitud (BFS)"
         }
+        if 'nodes_expanded' in locals() and nodes_expanded is not None:
+            out['nodes_expanded'] = nodes_expanded
+            out['max_depth'] = max_depth
+        return out
     else:
         return {
             "success": False,

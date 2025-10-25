@@ -1,21 +1,38 @@
+# --------------------------------------------------------
+# Proyecto de inteligencia Artificial - Smart astronaut
+# Integrantes: 
+# Dylan Fernando Morales Rojas (2338330)
+# Johan Andres Ceballos Tabarez (2372229)
+#
+# Universidad: Universidad del Valle
+# Profesor: Oscar Bedoya
+#
+# Fecha de creación: 23 de septiembre del 2025
+# Última modificación: 24 de octubre del 2025
+#
+# Archivo: main.py
+# --------------------------------------------------------
+
 import pygame
 import sys
 import os
 import tkinter as tk
 from tkinter import filedialog
 from PIL import Image, ImageSequence
-from Algorithms.breadth import ejecutar_busqueda_amplitud, calcular_costo_movimiento
+import time
+from Algorithms.breadth import execute_breadth_search, calculate_movement_cost
 from Algorithms.greedy import greedy_search
 from Algorithms.a_star import a_star
+from Algorithms.uniform_cost import execute_uniform_cost_search
+from Algorithms.depth import execute_depth_search
 from Algorithms.objects import Node
-
  
 
 pygame.init()
 pygame.mixer.init()  # Inicializar el sistema de audio
 
-# Window setup
-size = (600, 700)  # Increased from 500x500 to give more space
+# Configuración de la ventana
+size = (600, 700)  # Aumentado desde 500x500 para dar más espacio
 screen = pygame.display.set_mode(size)
 pygame.display.set_caption("Smart Astronaut")
 
@@ -45,7 +62,7 @@ except Exception as e:
     print(f"Error cargando sonido de nave: {e}")
     ship_sound = None
 
-# Game states
+# Estados del juego
 TITLE_SCREEN = 0
 GAME_SCREEN = 1
 SELECT_ALGORITHM_SCREEN = 2
@@ -54,32 +71,35 @@ SELECT_INFORMED_SCREEN = 4
 SIMULATION_SCREEN = 5
 current_state = TITLE_SCREEN
 
-# Algorithm selection variables
-selected_algorithm_type = None  # "uninformed" or "informed"
-selected_algorithm = None       # specific algorithm name
+# Variables de selección de algoritmo
+selected_algorithm_type = None  # "uninformed" o "informed"
+selected_algorithm = None       # nombre específico del algoritmo
 
-# Animation variables
+# Variables de animación
 algorithm_path = []            # Camino encontrado por el algoritmo
 current_step = 0               # Paso actual en la animación
 astronaut_pos = (1, 2)         # Posición actual del astronauta
-animation_speed = 30           # Frames entre cada paso (más bajo = más rápido)
+animation_speed = 30           # Fotogramas entre cada paso (más bajo = más rápido)
 animation_counter = 0          # Contador para controlar la velocidad
 is_animating = False           # Si está en proceso de animación
 collected_samples = set()      # Muestras ya recolectadas
+ship_collected = set()        # Posiciones de naves ya recolectadas (para ocultarlas visualmente)
 algorithm_result = None        # Resultado completo del algoritmo
 current_cost = 0               # Costo acumulado actual en la animación
 has_ship = False               # Si el astronauta tiene la nave en la animación
 fuel_left = 0                  # Combustible restante en la animación
+just_boarded = False           # Bandera para evitar decrementar combustible en la misma iteración de boarding
 
-# Astronaut animation variables
+# Variables de animación del astronauta
 astronaut_sprites = []         # Lista de sprites del astronauta corriendo
 astronaut_sprites_flipped = [] # Sprites invertidos para movimiento izquierda
 current_sprite_index = 0       # Índice del sprite actual (0-4)
 astronaut_direction = "right"  # Dirección del movimiento ("right" o "left")
 animation_completed = False    # Si la animación ha terminado completamente
 original_world = []            # Copia del mundo original para restaurar terrenos
+report_visible = False        # Mostrar ventana emergente del informe
 
-# Colors
+# Colores
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 BLUE = (0, 0, 255)
@@ -89,7 +109,7 @@ GREEN = (0, 255, 0)
 YELLOW = (255, 255, 0)
 PURPLE = (128, 0, 128)
 
-# Initialize world with default values
+# Inicializar el mundo con valores por defecto
 world = [
     [0, 5, 0, 0, 0, 0, 0, 0, 0, 0],
     [1, 1, 1, 0, 1, 1, 1, 0, 1, 0],
@@ -103,23 +123,23 @@ world = [
     [0, 1, 1, 1, 0, 0, 0, 0, 0, 1]
 ]
 
-# Fonts
+# Fuentes
 title_font = pygame.font.Font(None, 64)
-large_title_font = pygame.font.Font(None, 48)  # New font for selection screen titles
-button_font = pygame.font.Font(None, 36)       # Increased from 32
+large_title_font = pygame.font.Font(None, 48)  # Fuente nueva para títulos de la pantalla de selección
+button_font = pygame.font.Font(None, 36)       # Aumentada desde 32
 subtitle_font = pygame.font.Font(None, 24)
 small_font = pygame.font.Font(None, 20)
 
-# Cell size - Reduced to fit better in window
-cell_size = 45  # Reduced from size[0] // 10 (which was 60)
+# Tamaño de celda - Reducido para ajustarse mejor a la ventana
+cell_size = 45  # Reducido desde size[0] // 10 (antes era 60)
 
-# Load space background
+# Cargar fondo espacial
 try:
-    # Load first frame of GIF
+    # Cargar el primer fotograma del GIF
     gif = Image.open("Resources/space.gif")
     frame = gif.convert('RGB')
     
-    # Convert PIL image to pygame surface
+    # Convertir imagen PIL a superficie de pygame
     mode = frame.mode
     size_pil = frame.size
     data = frame.tobytes()
@@ -129,7 +149,7 @@ try:
     print("GIF loaded successfully!")
 except Exception as e:
     print(f"Error loading GIF: {e}")
-    # If gif fails, create a starry background
+    # Si falla el GIF, crear un fondo estrellado
     space_bg = pygame.Surface(size)
     space_bg.fill((5, 5, 25))
     import random
@@ -138,14 +158,14 @@ except Exception as e:
         y = random.randint(0, size[1])
         pygame.draw.circle(space_bg, WHITE, (x, y), 1)
 
-# Load title image
+# Cargar imagen del título
 try:
     title_img_original = pygame.image.load("Resources/title.png")
-    # Get original dimensions
+    # Obtener dimensiones originales
     original_width = title_img_original.get_width()
     original_height = title_img_original.get_height()
     
-    # Scale to 80% of screen width while maintaining aspect ratio
+    # Escalar al 80% del ancho de la pantalla manteniendo la proporción
     desired_width = int(size[0] * 0.8)  # 80% of screen width
     scale_factor = desired_width / original_width
     new_height = int(original_height * scale_factor)
@@ -154,7 +174,7 @@ try:
 except:
     title_img = None
 
-# Load terrain images
+# Cargar imágenes de terreno
 terrain1_img = pygame.image.load("Resources/Terrain1.png")
 terrain1_img = pygame.transform.scale(terrain1_img, (cell_size, cell_size))
 
@@ -167,7 +187,7 @@ terrain3_img = pygame.transform.scale(terrain3_img, (cell_size, cell_size))
 terrain4_img = pygame.image.load("Resources/Terrain4.png")
 terrain4_img = pygame.transform.scale(terrain4_img, (cell_size, cell_size))
 
-# Load object images
+# Cargar imágenes de objetos
 sample_img = pygame.image.load("Resources/sample.png")
 sample_img = pygame.transform.scale(sample_img, (cell_size, cell_size))
 
@@ -176,11 +196,11 @@ ship_scale = 1.5
 ship_size = int(cell_size * ship_scale)
 ship_img = pygame.transform.scale(ship_img_original, (ship_size, ship_size))
 
-# Load astronaut running animation sprites
+# Cargar sprites de animación del astronauta corriendo
 astronaut_scale = 0.9  # Incrementar de 0.8 a 0.9 para mejor visibilidad
 astronaut_size = int(cell_size * astronaut_scale)
 
-# Load all 5 astronaut sprites
+# Cargar las 5 sprites del astronauta
 def scale_sprite_proportional(sprite_original, target_size):
     """Escala un sprite manteniendo sus proporciones originales y centrándolo"""
     original_width, original_height = sprite_original.get_size()
@@ -217,42 +237,53 @@ for i in range(1, 6):  # Astronaut.png, Astronaut2.png, ..., Astronaut5.png
         filename = f"Resources/Astronaut{i}.png"
     
     try:
-        # Load original sprite
+        # Cargar sprite original
         sprite_original = pygame.image.load(filename)
         
         # Escalar manteniendo proporciones originales
         sprite_scaled = scale_sprite_proportional(sprite_original, astronaut_size)
         astronaut_sprites.append(sprite_scaled)
-        
-        # Create flipped version for left movement
-        sprite_flipped = pygame.transform.flip(sprite_scaled, True, False)  # Flip horizontally
+
+        # Crear versión volteada para movimiento hacia la izquierda
+        sprite_flipped = pygame.transform.flip(sprite_scaled, True, False)  # Voltear horizontalmente
         astronaut_sprites_flipped.append(sprite_flipped)
-        
+
         print(f"Loaded astronaut sprite: {filename} - Size: {astronaut_size}x{astronaut_size} (proportional)")
     except Exception as e:
         print(f"Error loading {filename}: {e}")
-        # Fallback: use first sprite if others fail
+        # Alternativa: usar el primer sprite si fallan los demás
         if astronaut_sprites:
             astronaut_sprites.append(astronaut_sprites[0])
             astronaut_sprites_flipped.append(astronaut_sprites_flipped[0])
 
-# Fallback for compatibility (use first sprite)
+# Alternativa para compatibilidad (usar primer sprite)
 astronaut_img = astronaut_sprites[0] if astronaut_sprites else None
 
-# Load game screen specific images
+# Cargar imagen traveling / astronauta-en-nave (usada cuando el astronauta esté en la nave)
+try:
+    traveling_original = pygame.image.load("Resources/traveling.png")
+    traveling_sprite = scale_sprite_proportional(traveling_original, astronaut_size)
+    traveling_sprite_flipped = pygame.transform.flip(traveling_sprite, True, False)
+    print("traveling.png loaded successfully!")
+except Exception as e:
+    traveling_sprite = None
+    traveling_sprite_flipped = None
+    print(f"Error loading traveling.png: {e}")
+
+# Cargar imágenes específicas para la pantalla del juego
 try:
     space2_bg = pygame.image.load("Resources/space2.png")
     space2_bg = pygame.transform.scale(space2_bg, size)
     print("space2.png loaded successfully!")
 except Exception as e:
     print(f"Error loading space2.png: {e}")
-    space2_bg = space_bg  # Fallback to original space background
+    space2_bg = space_bg  # Alternativa: usar el fondo espacial original
 
 try:
     start_button_img = pygame.image.load("Resources/buttonstart.png")
-    # Scale button to larger size
-    button_width = 150  # Increased from 120
-    button_height = 50   # Increased from 40
+    # Escalar botón a tamaño mayor
+    button_width = 150  # Aumentado desde 120
+    button_height = 50   # Aumentado desde 40
     start_button_img = pygame.transform.scale(start_button_img, (button_width, button_height))
     print("buttonstart.png loaded successfully!")
 except Exception as e:
@@ -263,11 +294,11 @@ def load_world_from_file():
     """Load world from text file using file dialog"""
     global world
     
-    # Hide pygame window temporarily
+    # Ocultar la ventana de pygame temporalmente
     root = tk.Tk()
     root.withdraw()
     
-    # Open file dialog
+    # Abrir diálogo de archivos
     file_path = filedialog.askopenfilename(
         title="Select World File",
         filetypes=[("Text files", "*.txt"), ("All files", "*.*")]
@@ -282,12 +313,12 @@ def load_world_from_file():
                 new_world = []
                 
                 for line in lines:
-                    # Skip empty lines and comment lines
+                    # Omitir líneas vacías y líneas de comentario
                     line = line.strip()
                     if not line or line.startswith('//') or line.startswith('#'):
                         continue
-                    
-                    # Remove whitespace and split by spaces or commas
+
+                    # Eliminar espacios en blanco y dividir por espacios o comas
                     row_data = line.replace(',', ' ').split()
                     row = []
                     
@@ -296,13 +327,13 @@ def load_world_from_file():
                             num = int(item)
                             row.append(num)
                         except ValueError:
-                            # Skip non-numeric values
+                            # Omitir valores no numéricos
                             continue
                     
-                    if len(row) == 10:  # Ensure we have exactly 10 columns
+                    if len(row) == 10:  # Asegurarse de que hay exactamente 10 columnas
                         new_world.append(row)
                 
-                # Ensure we have exactly 10 rows
+                # Asegurarse de que hay exactamente 10 filas
                 if len(new_world) == 10:
                     world = new_world
                     print("World loaded successfully!")
@@ -317,12 +348,16 @@ def load_world_from_file():
     
     return False
 
+"""
+
+función que dibuja la pantalla de título
+
+"""
 def draw_title_screen():
-    """Draw the title screen"""
-    # Draw space background
+    # Dibujar fondo espacial
     screen.blit(space_bg, (0, 0))
     
-    # Draw title with better positioning for larger screen
+    # Dibujar título con mejor posicionamiento para pantallas más grandes
     if title_img:
         title_rect = title_img.get_rect(center=(size[0]//2, size[1]//3 - 20))
         screen.blit(title_img, title_rect)
@@ -331,12 +366,12 @@ def draw_title_screen():
         title_rect = title_text.get_rect(center=(size[0]//2, size[1]//3 - 20))
         screen.blit(title_text, title_rect)
     
-    # Draw subtitle with better spacing
+    # Dibujar subtítulo con mejor espaciado
     subtitle_text = subtitle_font.render("Misión de Exploración", True, GRAY)
     subtitle_rect = subtitle_text.get_rect(center=(size[0]//2, size[1]//3 + 60))
     screen.blit(subtitle_text, subtitle_rect)
     
-    # Draw load file button with better positioning
+    # Dibujar botón 'Cargar el mundo' con mejor posicionamiento
     button_text = button_font.render("Cargar el mundo", True, WHITE)
     button_rect = pygame.Rect(size[0]//2 - 100, size[1]//2 + 100, 200, 50)
     pygame.draw.rect(screen, (50, 50, 100), button_rect)
@@ -345,24 +380,29 @@ def draw_title_screen():
     text_rect = button_text.get_rect(center=button_rect.center)
     screen.blit(button_text, text_rect)
     
-    # Draw controls instructions
+    # Dibujar instrucciones de controles
     controls_text = small_font.render("Presiona 'M' para pausar/reanudar música", True, GRAY)
     controls_rect = controls_text.get_rect(center=(size[0]//2, size[1] - 40))
     screen.blit(controls_text, controls_rect)
     
     return button_rect
 
+
+"""
+
+Función que dibuja la pantalla de selección de tipo de algoritmo
+
+"""
 def draw_algorithm_selection_screen():
-    """Draw the algorithm type selection screen"""
-    # Draw space background
+    # Dibujar fondo espacial
     screen.blit(space_bg, (0, 0))
     
-    # Draw title with better positioning for larger screen
+    # Dibujar título con mejor posicionamiento para pantallas más grandes
     title_text = large_title_font.render("Selecciona tipo de búsqueda", True, WHITE)
     title_rect = title_text.get_rect(center=(size[0]//2, size[1]//6 + 20))
     screen.blit(title_text, title_rect)
     
-    # Draw uninformed search button with more space
+    # Dibujar botón para búsqueda no informada con más espacio
     uninformed_button_text = button_font.render("No Informada", True, WHITE)
     uninformed_button_rect = pygame.Rect(size[0]//2 - 100, size[1]//2 - 30, 200, 50)
     pygame.draw.rect(screen, (50, 100, 50), uninformed_button_rect)
@@ -371,7 +411,7 @@ def draw_algorithm_selection_screen():
     uninformed_text_rect = uninformed_button_text.get_rect(center=uninformed_button_rect.center)
     screen.blit(uninformed_button_text, uninformed_text_rect)
     
-    # Draw informed search button with better spacing
+    # Dibujar botón para búsqueda informada con mejor espaciado
     informed_button_text = button_font.render("Informada", True, WHITE)
     informed_button_rect = pygame.Rect(size[0]//2 - 100, size[1]//2 + 40, 200, 50)
     pygame.draw.rect(screen, (100, 50, 100), informed_button_rect)
@@ -380,7 +420,7 @@ def draw_algorithm_selection_screen():
     informed_text_rect = informed_button_text.get_rect(center=informed_button_rect.center)
     screen.blit(informed_button_text, informed_text_rect)
     
-    # Back button
+    # Botón atrás
     back_button_text = subtitle_font.render("Atrás", True, WHITE)
     back_button_rect = pygame.Rect(20, size[1] - 50, 80, 30)
     pygame.draw.rect(screen, (100, 100, 100), back_button_rect)
@@ -391,17 +431,22 @@ def draw_algorithm_selection_screen():
     
     return uninformed_button_rect, informed_button_rect, back_button_rect
 
+
+"""
+
+Función que dibuja la pantalla de selección de algoritmo no informados
+
+"""
 def draw_uninformed_selection_screen():
-    """Draw the uninformed algorithm selection screen"""
-    # Draw space background
+    # Dibujar fondo espacial
     screen.blit(space_bg, (0, 0))
     
-    # Draw title with larger font
+    # Dibujar título con fuente más grande
     title_text = large_title_font.render("Búsqueda No Informada", True, WHITE)
     title_rect = title_text.get_rect(center=(size[0]//2, size[1]//8))
     screen.blit(title_text, title_rect)
     
-    # Draw algorithm buttons with smaller text and buttons
+    # Dibujar botones de algoritmo con texto y botones reducidos
     algorithms = [
         ("Amplitud", "breadth"),
         ("Costo Uniforme", "uniform_cost"),
@@ -420,7 +465,7 @@ def draw_uninformed_selection_screen():
         
         button_rects.append((button_rect, algorithm_name))
     
-    # Back button
+    # Botón Atrás
     back_button_text = subtitle_font.render("Atrás", True, WHITE)
     back_button_rect = pygame.Rect(20, size[1] - 50, 80, 30)
     pygame.draw.rect(screen, (100, 100, 100), back_button_rect)
@@ -431,17 +476,21 @@ def draw_uninformed_selection_screen():
     
     return button_rects, back_button_rect
 
+"""
+
+Función que dibuja la pantalla de selección de algoritmo informados
+
+"""
 def draw_informed_selection_screen():
-    """Draw the informed algorithm selection screen"""
-    # Draw space background
+    # Dibujar fondo espacial
     screen.blit(space_bg, (0, 0))
     
-    # Draw title with larger font
+    # Dibujar título con fuente más grande
     title_text = large_title_font.render("Búsqueda Informada", True, WHITE)
     title_rect = title_text.get_rect(center=(size[0]//2, size[1]//8))
     screen.blit(title_text, title_rect)
     
-    # Draw algorithm buttons
+    # Dibujar botones de algoritmo
     algorithms = [
         ("Avara", "greedy"),
         ("A*", "a_star")
@@ -459,7 +508,7 @@ def draw_informed_selection_screen():
         
         button_rects.append((button_rect, algorithm_name))
     
-    # Back button
+    # Botón Atrás
     back_button_text = subtitle_font.render("Atrás", True, WHITE)
     back_button_rect = pygame.Rect(20, size[1] - 50, 80, 30)
     pygame.draw.rect(screen, (100, 100, 100), back_button_rect)
@@ -470,38 +519,41 @@ def draw_informed_selection_screen():
     
     return button_rects, back_button_rect
 
+
+"""
+Función que dibuja la pantalla del juego principal
+"""
 def draw_game_screen():
-    """Draw the game world with improved design using specific assets"""
-    # Draw space2 background
+    # Dibujar fondo space2
     screen.blit(space2_bg, (0, 0))
     
-    # Draw title image instead of text - positioned to be fully visible
+    # Dibujar imagen del título en lugar de texto - posicionada para ser totalmente visible
     if title_img:
-        # Scale title larger to be more visible
-        title_scale = 0.7  # Increased from 0.5
+        # Escalar el título para que sea más visible
+        title_scale = 0.7  # Aumentado desde 0.5
         title_width = int(title_img.get_width() * title_scale)
         title_height = int(title_img.get_height() * title_scale)
         title_scaled = pygame.transform.scale(title_img, (title_width, title_height))
-        title_rect = title_scaled.get_rect(center=(size[0]//2, 85))  # Moved from 65 to 85 for better margin
+        title_rect = title_scaled.get_rect(center=(size[0]//2, 85))  # Movido de 65 a 85 para mejor margen
         screen.blit(title_scaled, title_rect)
     else:
-        # Fallback to text if image fails
+        # Alternativa a texto si la imagen falla
         title_text = large_title_font.render("SMART ASTRONAUT", True, WHITE)
-        title_rect = title_text.get_rect(center=(size[0]//2, 85))  # Moved from 65 to 85 for better margin
+        title_rect = title_text.get_rect(center=(size[0]//2, 85))  # Movido de 65 a 85 para mejor margen
         screen.blit(title_text, title_rect)
-    
-    # Draw selected algorithm info - positioned BELOW the title
+
+    # Dibujar información del algoritmo seleccionado - posicionada DEBAJO del título
     if selected_algorithm:
         algo_text = subtitle_font.render(f"Algoritmo: {selected_algorithm}", True, WHITE)
-        algo_rect = algo_text.get_rect(center=(size[0]//2, 135))  # Moved from 125 to 135 for more spacing
+        algo_rect = algo_text.get_rect(center=(size[0]//2, 135))  # Movido de 125 a 135 para mayor espaciado
         screen.blit(algo_text, algo_rect)
     
-    # Calculate grid position to center it with more spacing from title/algorithm
-    grid_size = cell_size * 10  # Grid is now 450x450 instead of 600x600
+    # Calcular posición de la cuadrícula para centrarla con más espacio respecto al título/algoritmo
+    grid_size = cell_size * 10  # La cuadrícula ahora es 450x450 en lugar de 600x600
     grid_x = (size[0] - grid_size) // 2
-    grid_y = 155  # Moved from 145 to 155 to accommodate algorithm text below title
+    grid_y = 155  # Movido de 145 a 155 para dar espacio al texto del algoritmo debajo del título
     
-    # Draw the grid
+    # Dibujar la cuadrícula
     for row in range(10):
         for col in range(10):
             x = grid_x + col * cell_size
@@ -509,42 +561,42 @@ def draw_game_screen():
 
             value = world[row][col]
 
-            # Draw texture or color depending on value
-            if value == 0:   # Free
+            # Dibujar textura o color según el valor
+            if value == 0:   # Libre
                 screen.blit(terrain1_img, (x, y))
-            elif value == 1: # Obstacle
+            elif value == 1: # Obstáculo
                 screen.blit(terrain4_img, (x, y))
-            elif value == 3: # Rocky
+            elif value == 3: # Rocoso
                 screen.blit(terrain2_img, (x, y))
-            elif value == 4: # Volcanic
+            elif value == 4: # Volcánico
                 screen.blit(terrain3_img, (x, y))
-            elif value == 6: # Sample (object on top of terrain1)
+            elif value == 6: # Muestra (objeto sobre terrain1)
                 screen.blit(terrain1_img, (x, y))
                 screen.blit(sample_img, (x, y))
-            elif value == 5: # Ship (object on top of terrain1, larger and centered)
+            elif value == 5: # Nave (objeto sobre terrain1, más grande y centrado)
                 screen.blit(terrain1_img, (x, y))
-                # Center the larger ship image in the cell
+                # Centrar la imagen de la nave en la celda
                 ship_offset = (ship_size - cell_size) // 2
                 screen.blit(ship_img, (x - ship_offset, y - ship_offset))
-            elif value == 2: # Astronaut (object on top of terrain1, centered)
+            elif value == 2: # Astronauta (objeto sobre terrain1, centrado)
                 screen.blit(terrain1_img, (x, y))
                 astronaut_offset = (astronaut_size - cell_size) // 2
                 current_astronaut_sprite = get_astronaut_sprite()
                 screen.blit(current_astronaut_sprite, (x - astronaut_offset, y - astronaut_offset))
             
-            # Draw borders for all cells with BLACK color
+            # Dibujar bordes para todas las celdas con color NEGRO
             pygame.draw.rect(screen, BLACK, (x, y, cell_size, cell_size), 1)
     
-    # Draw START button - positioned to be clearly visible and larger
-    button_y = grid_y + grid_size + 20  # 20px space from grid
-    start_button_rect = pygame.Rect(size[0]//2 - 75, button_y, 150, 50)  # Increased from 120x40 to 150x50
+    # Dibujar botón START - posicionado para ser claramente visible y más grande
+    button_y = grid_y + grid_size + 20  # 20px de espacio desde la cuadrícula
+    start_button_rect = pygame.Rect(size[0]//2 - 75, button_y, 150, 50)  # Aumentado de 120x40 a 150x50
     
     if start_button_img:
-        # Scale the button image to the new size
+    # Escalar la imagen del botón al nuevo tamaño
         start_button_scaled = pygame.transform.scale(start_button_img, (150, 50))
         screen.blit(start_button_scaled, start_button_rect)
     else:
-        # Fallback to drawn button with larger size
+        # Alternativa: dibujar botón con tamaño mayor
         start_button_text = button_font.render("START", True, WHITE)
         pygame.draw.rect(screen, (100, 50, 150), start_button_rect)
         pygame.draw.rect(screen, WHITE, start_button_rect, 2)
@@ -552,7 +604,7 @@ def draw_game_screen():
         start_text_rect = start_button_text.get_rect(center=start_button_rect.center)
         screen.blit(start_button_text, start_text_rect)
     
-    # Back button - positioned at bottom
+    # Botón atrás - posicionado en la parte inferior
     back_button_text = subtitle_font.render("Atrás", True, WHITE)
     back_button_rect = pygame.Rect(20, size[1] - 50, 80, 30)
     pygame.draw.rect(screen, (100, 100, 100), back_button_rect)
@@ -563,13 +615,23 @@ def draw_game_screen():
     
     return start_button_rect, back_button_rect
 
+"""
+Función que obtiene el sprite actual del astronauta basado en la dirección y animación
+"""
 def get_astronaut_sprite():
-    """Obtiene el sprite actual del astronauta basado en la dirección y animación"""
     global current_sprite_index, astronaut_direction, is_animating
+    global has_ship, traveling_sprite, traveling_sprite_flipped
     
     if not astronaut_sprites:
-        return astronaut_img  # Fallback
+        return astronaut_img  # Alternativa
     
+    # Si está en la nave, usar el sprite de viajar en la nave (independiente de animación)
+    if has_ship and traveling_sprite:
+        if astronaut_direction == "left":
+            return traveling_sprite_flipped
+        else:
+            return traveling_sprite
+
     # Si no está animando (parado), usar el sprite 1 (índice 0)
     if not is_animating:
         if astronaut_direction == "left":
@@ -587,8 +649,11 @@ def get_astronaut_sprite():
     else:
         return astronaut_sprites[walking_sprite_index]
 
+
+"""
+Función que actualiza la dirección del astronauta basado en el movimiento
+"""
 def update_astronaut_direction(old_pos, new_pos):
-    """Actualiza la dirección del astronauta basado en el movimiento"""
     global astronaut_direction, current_sprite_index
     
     old_col, new_col = old_pos[1], new_pos[1]
@@ -603,10 +668,13 @@ def update_astronaut_direction(old_pos, new_pos):
     # Avanzar al siguiente sprite de la animación
     current_sprite_index = (current_sprite_index + 1) % len(astronaut_sprites)
 
+
+"""
+Función que actualiza la animación del astronauta paso a paso
+"""
 def update_animation():
-    """Actualiza la animación del astronauta moviéndose por el camino"""
     global current_step, animation_counter, astronaut_pos, is_animating, collected_samples, world
-    global current_cost, has_ship, fuel_left, animation_completed
+    global current_cost, has_ship, fuel_left, animation_completed, ship_sound, just_boarded
     
     # Si no está animando o ya completó, no hacer nada
     if not is_animating or animation_completed:
@@ -632,22 +700,49 @@ def update_animation():
             
             # Solo calcular costo si no es el primer paso (posición inicial no cuesta)
             if current_step > 0:
+                # Guardar estado previo para que la reducción de costo por nave NO se aplique en la misma transición de boarding
+                prev_has_ship = has_ship
+                prev_fuel = fuel_left
+
                 # Verificar si llega a la nave (usando mundo original)
                 if original_world[new_row][new_col] == 5 and not has_ship:
                     has_ship = True
                     fuel_left = 20
+                    # Marcar la nave como recolectada para ocultarla visualmente durante la simulación
+                    try:
+                        ship_collected.add((new_row, new_col))
+                    except Exception:
+                        pass
+                    # Marcar que justo se subió para que el decremento empiece en la siguiente iteración
+                    just_boarded = True
                     print(f"¡Astronauta subió a la nave! Combustible: {fuel_left}")
                     # Reproducir sonido de nave
                     if ship_sound:
                         ship_sound.play()
-                
-                # Actualizar combustible si tiene nave
-                if has_ship and fuel_left > 0:
-                    fuel_left -= 1
-                
-                # Calcular costo del movimiento usando el terreno original
+
+                # Actualizar combustible si tiene nave (decremento aplicará a partir del siguiente movimiento)
+                if has_ship:
+                    if just_boarded:
+                        # No decrementar en la misma iteración en que se sube
+                        just_boarded = False
+                    else:
+                        if fuel_left > 0:
+                            fuel_left -= 1
+
+                # Si el combustible se acabó, bajar de la nave: volver a sprite normal y detener sonido
+                if has_ship and fuel_left <= 0:
+                    fuel_left = 0
+                    has_ship = False
+                    print("¡Combustible agotado! Volviendo a sprite normal.")
+                    if ship_sound:
+                        try:
+                            ship_sound.stop()
+                        except Exception:
+                            pass
+
+                # Calcular costo del movimiento usando el terreno original y el estado PREVIO a la transición
                 terrain_type = original_world[new_row][new_col]
-                step_cost = calcular_costo_movimiento(terrain_type, has_ship, fuel_left >= 0)
+                step_cost = calculate_movement_cost(terrain_type, prev_has_ship, prev_fuel > 0)
                 current_cost += step_cost
                 
                 # Mostrar información del paso
@@ -675,14 +770,16 @@ def update_animation():
                 print(f"Costo final: {current_cost}")
                 print(f"Muestras recolectadas: {len(collected_samples)}")
 
+"""
+Función que dibuja la pantalla de simulación con la animación en progreso
+"""
 def draw_simulation_screen():
-    """Dibuja la pantalla de simulación con la animación en progreso"""
     global is_animating, animation_completed, astronaut_pos, current_step, algorithm_path
     
-    # Draw space2 background
+    # Dibujar fondo space2
     screen.blit(space2_bg, (0, 0))
     
-    # Draw title
+    # Dibujar título
     if title_img:
         title_scale = 0.5
         title_width = int(title_img.get_width() * title_scale)
@@ -691,13 +788,13 @@ def draw_simulation_screen():
         title_rect = title_scaled.get_rect(center=(size[0]//2, 50))
         screen.blit(title_scaled, title_rect)
     
-    # Draw algorithm info
+    # Dibujar información del algoritmo
     if algorithm_result:
         algo_text = subtitle_font.render(f"Algoritmo: {algorithm_result['algorithm']}", True, WHITE)
         algo_rect = algo_text.get_rect(center=(size[0]//2, 80))
         screen.blit(algo_text, algo_rect)
         
-        # Draw progress info con costo actual
+    # Dibujar progreso e información de costo actual
         if animation_completed:
             progress_text = small_font.render(f"¡COMPLETADO! | Pasos: {len(algorithm_path)-1} | Costo Final: {current_cost}", True, GREEN)
         else:
@@ -705,25 +802,25 @@ def draw_simulation_screen():
         progress_rect = progress_text.get_rect(center=(size[0]//2, 100))
         screen.blit(progress_text, progress_rect)
         
-        # Draw samples collected
+    # Dibujar muestras recolectadas
         samples_text = small_font.render(f"Muestras recolectadas: {len(collected_samples)}", True, GREEN)
         samples_rect = samples_text.get_rect(center=(size[0]//2, 120))
         screen.blit(samples_text, samples_rect)
         
-        # Draw ship info if applicable
+        # Dibujar información de la nave si aplica
         if has_ship:
             ship_text = small_font.render(f"🚀 Nave: Combustible {fuel_left}/20", True, YELLOW)
             ship_rect = ship_text.get_rect(center=(size[0]//2, 140))
             screen.blit(ship_text, ship_rect)
-            grid_y = 160  # Adjust grid position
+            grid_y = 160  # Ajustar posición de la cuadrícula
         else:
             grid_y = 140
     
-    # Calculate grid position (will be overridden above)
+    # Calcular posición de la cuadrícula (puede ser sobrescrita arriba si aplica)
     grid_size = cell_size * 10
     grid_x = (size[0] - grid_size) // 2
     
-    # Draw the grid with animation usando el mundo original
+    # Dibujar la cuadrícula con animación usando el mundo original
     for row in range(10):
         for col in range(10):
             x = grid_x + col * cell_size
@@ -732,36 +829,38 @@ def draw_simulation_screen():
             # Usar el valor del mundo original para preservar los terrenos
             value = original_world[row][col] if original_world else world[row][col]
             
-            # Draw texture or color depending on value
-            if value == 0:   # Free
+            # Dibujar textura o color según el valor
+            if value == 0:   # Libre
                 screen.blit(terrain1_img, (x, y))
-            elif value == 1: # Obstacle
+            elif value == 1: # Obstáculo
                 screen.blit(terrain4_img, (x, y))
-            elif value == 3: # Rocky
+            elif value == 3: # Rocoso
                 screen.blit(terrain2_img, (x, y))
-            elif value == 4: # Volcanic
+            elif value == 4: # Volcánico
                 screen.blit(terrain3_img, (x, y))
-            elif value == 6: # Sample (only if not collected)
+            elif value == 6: # Muestra (solo si no fue recolectada)
                 screen.blit(terrain1_img, (x, y))
                 if (row, col) not in collected_samples:
                     screen.blit(sample_img, (x, y))
-            elif value == 5: # Ship
+            elif value == 5: # Nave
                 screen.blit(terrain1_img, (x, y))
-                ship_offset = (ship_size - cell_size) // 2
-                screen.blit(ship_img, (x - ship_offset, y - ship_offset))
-            elif value == 2: # Astronaut position (draw as free terrain)
+                # Dibujar la nave solo si no ha sido recolectada durante esta simulación
+                if (row, col) not in ship_collected:
+                    ship_offset = (ship_size - cell_size) // 2
+                    screen.blit(ship_img, (x - ship_offset, y - ship_offset))
+            elif value == 2: # Posición del astronauta (dibujar como terreno libre)
                 screen.blit(terrain1_img, (x, y))
             
-            # Draw astronaut on top if this is his current position (durante animación o cuando terminó)
+            # Dibujar astronauta encima si esta es su posición actual (durante animación o cuando terminó)
             if (row, col) == astronaut_pos and (is_animating or animation_completed):
                 astronaut_offset = (astronaut_size - cell_size) // 2
                 current_astronaut_sprite = get_astronaut_sprite()
                 screen.blit(current_astronaut_sprite, (x - astronaut_offset, y - astronaut_offset))
             
-            # Draw borders
+            # Dibujar bordes
             pygame.draw.rect(screen, BLACK, (x, y, cell_size, cell_size), 1)
             
-            # Highlight path - mostrar camino completo si la animación terminó, o solo hasta el paso actual
+            # Resaltar camino - mostrar camino completo si la animación terminó, o solo hasta el paso actual
             if animation_completed:
                 # Si terminó, mostrar todo el camino excepto donde está el astronauta
                 if (row, col) in algorithm_path and (row, col) != astronaut_pos:
@@ -772,31 +871,54 @@ def draw_simulation_screen():
                     if (row, col) != astronaut_pos:  # No highlight current astronaut position
                         pygame.draw.rect(screen, YELLOW, (x, y, cell_size, cell_size), 3)
     
-    # Draw buttons
+    # Dibujar botones
     button_y = grid_y + grid_size + 20
-    
-    # Reset button
-    reset_text = subtitle_font.render("Reiniciar", True, WHITE)
-    reset_button_rect = pygame.Rect(size[0]//2 - 100, button_y, 80, 30)
+    # Colocar tres botones horizontalmente con el mismo espaciado: Reiniciar | Ver informe | Atrás
+    btn_w = 100
+    btn_h = 30
+    spacing = 20
+    total_w = btn_w * 3 + spacing * 2
+    start_x = (size[0] - total_w) // 2
+
+    # Botón Reiniciar - izquierda
+    reset_button_rect = pygame.Rect(start_x, button_y, btn_w, btn_h)
     pygame.draw.rect(screen, (100, 50, 50), reset_button_rect)
     pygame.draw.rect(screen, WHITE, reset_button_rect, 2)
-    
+    reset_text = subtitle_font.render("Reiniciar", True, WHITE)
     reset_text_rect = reset_text.get_rect(center=reset_button_rect.center)
     screen.blit(reset_text, reset_text_rect)
-    
-    # Back button
-    back_text = subtitle_font.render("Atrás", True, WHITE)
-    back_button_rect = pygame.Rect(size[0]//2 + 20, button_y, 80, 30)
+
+    # Botón Ver informe - medio (dibujar solo si la animación terminó y hay resultado)
+    report_button_rect = pygame.Rect(start_x + (btn_w + spacing), button_y, btn_w, btn_h)
+    if animation_completed and algorithm_result:
+        # Estilo activo
+        pygame.draw.rect(screen, (50, 100, 50), report_button_rect)
+        pygame.draw.rect(screen, WHITE, report_button_rect, 2)
+        report_text = subtitle_font.render("Ver informe", True, WHITE)
+        report_text_rect = report_text.get_rect(center=report_button_rect.center)
+        screen.blit(report_text, report_text_rect)
+    else:
+        # Estilo deshabilitado (visible pero atenuado)
+        pygame.draw.rect(screen, (80, 80, 80), report_button_rect)
+        pygame.draw.rect(screen, (120, 120, 120), report_button_rect, 2)
+        report_text = subtitle_font.render("Ver informe", True, (160, 160, 160))
+        report_text_rect = report_text.get_rect(center=report_button_rect.center)
+        screen.blit(report_text, report_text_rect)
+
+    # Botón Atrás - derecha
+    back_button_rect = pygame.Rect(start_x + 2 * (btn_w + spacing), button_y, btn_w, btn_h)
     pygame.draw.rect(screen, (100, 100, 100), back_button_rect)
     pygame.draw.rect(screen, WHITE, back_button_rect, 2)
-    
+    back_text = subtitle_font.render("Atrás", True, WHITE)
     back_text_rect = back_text.get_rect(center=back_button_rect.center)
     screen.blit(back_text, back_text_rect)
-    
-    return reset_button_rect, back_button_rect
 
+    return reset_button_rect, back_button_rect, report_button_rect
+
+"""
+Función para pausar/reanudar la música de fondo
+"""
 def toggle_music():
-    """Función para pausar/reanudar la música de fondo"""
     if pygame.mixer.music.get_busy():
         pygame.mixer.music.pause()
         print("Música pausada")
@@ -804,7 +926,7 @@ def toggle_music():
         pygame.mixer.music.unpause()
         print("Música reanudada")
 
-# Main game loop
+# Bucle principal del juego
 clock = pygame.time.Clock()
 running = True
 
@@ -820,7 +942,7 @@ while running:
                 load_button = draw_title_screen()
                 
                 if load_button.collidepoint(mouse_pos):
-                    # Load world from file
+                    # Cargar mundo desde archivo
                     if load_world_from_file():
                         current_state = SELECT_ALGORITHM_SCREEN
             
@@ -871,16 +993,23 @@ while running:
                     if selected_algorithm == "breadth":
                         # Ejecutar búsqueda por amplitud
                         print(f"Ejecutando algoritmo: {selected_algorithm}")
-                        result = ejecutar_busqueda_amplitud(world)
-                        
+                        start = time.perf_counter()
+                        result = execute_breadth_search(world)
+                        elapsed = time.perf_counter() - start
+                        if result is None:
+                            result = {"success": False, "error": "No se obtuvo resultado"}
+                        result['time'] = elapsed
+
                         if result and result.get("success"):
                             # Guardar copia del mundo original
                             original_world = [row[:] for row in world]  # Copia profunda
-                            
+
                             algorithm_path = result["path"]
                             algorithm_result = result
                             current_step = 0
                             collected_samples = set()
+                            ship_collected = set()
+                            just_boarded = False
                             is_animating = True
                             current_cost = 0  # Inicializar costo en 0
                             has_ship = False  # Inicializar sin nave
@@ -888,33 +1017,48 @@ while running:
                             current_sprite_index = 0  # Resetear animación de sprites
                             astronaut_direction = "right"  # Dirección inicial
                             animation_completed = False  # Resetear estado de animación
-                            
+
                             # Encontrar posición inicial del astronauta
                             for row in range(10):
                                 for col in range(10):
                                     if world[row][col] == 2:
                                         astronaut_pos = (row, col)
                                         break
-                            
+
+                            # Normalizar formato del camino: asegurar que el primer elemento sea la posición inicial
+                            if algorithm_path:
+                                try:
+                                    if algorithm_path[0] != astronaut_pos:
+                                        algorithm_path = [astronaut_pos] + algorithm_path
+                                except Exception:
+                                    pass
+
                             print(f"Camino encontrado: {len(algorithm_path)} pasos")
                             print(f"Costo total: {result['total_cost']}")
                             current_state = SIMULATION_SCREEN
                         else:
                             error_msg = result.get("error", "Error desconocido")
                             print(f"Error: {error_msg}")
-                    if selected_algorithm == "greedy":
-                        # Ejecutar búsqueda voraz
+                    elif selected_algorithm == "uniform_cost":
+                        # Ejecutar búsqueda de costo uniforme
                         print(f"Ejecutando algoritmo: {selected_algorithm}")
-                        result = greedy_search(world)
-                        
+                        start = time.perf_counter()
+                        result = execute_uniform_cost_search(world)
+                        elapsed = time.perf_counter() - start
+                        if result is None:
+                            result = {"success": False, "error": "No se obtuvo resultado"}
+                        result['time'] = elapsed
+
                         if result and result.get("success"):
                             # Guardar copia del mundo original
                             original_world = [row[:] for row in world]  # Copia profunda
-                            
+
                             algorithm_path = result["path"]
                             algorithm_result = result
                             current_step = 0
                             collected_samples = set()
+                            ship_collected = set()
+                            just_boarded = False
                             is_animating = True
                             current_cost = 0  # Inicializar costo en 0
                             has_ship = False  # Inicializar sin nave
@@ -922,29 +1066,48 @@ while running:
                             current_sprite_index = 0  # Resetear animación de sprites
                             astronaut_direction = "right"  # Dirección inicial
                             animation_completed = False  # Resetear estado de animación
-                            
+
                             # Encontrar posición inicial del astronauta
                             for row in range(10):
                                 for col in range(10):
                                     if world[row][col] == 2:
                                         astronaut_pos = (row, col)
                                         break
-                            
+
+                            # Normalizar formato del camino: asegurar que el primer elemento sea la posición inicial
+                            if algorithm_path:
+                                try:
+                                    if algorithm_path[0] != astronaut_pos:
+                                        algorithm_path = [astronaut_pos] + algorithm_path
+                                except Exception:
+                                    pass
+
                             print(f"Camino encontrado: {len(algorithm_path)} pasos")
-                            print(f"Costo total: {result['total_cost']}")
+                            print(f"Costo total: {result.get('total_cost', 0)}")
                             current_state = SIMULATION_SCREEN
-                    if selected_algorithm == "a_star":
+                        else:
+                            error_msg = result.get("error", "Error desconocido")
+                            print(f"Error: {error_msg}")
+                    elif selected_algorithm == "greedy":
+                        # Ejecutar búsqueda voraz
                         print(f"Ejecutando algoritmo: {selected_algorithm}")
-                        result = a_star(world)
-                            
+                        start = time.perf_counter()
+                        result = greedy_search(world)
+                        elapsed = time.perf_counter() - start
+                        if result is None:
+                            result = {"success": False, "error": "No se obtuvo resultado"}
+                        result['time'] = elapsed
+
                         if result and result.get("success"):
                             # Guardar copia del mundo original
                             original_world = [row[:] for row in world]  # Copia profunda
-                                
+
                             algorithm_path = result["path"]
                             algorithm_result = result
                             current_step = 0
                             collected_samples = set()
+                            ship_collected = set()
+                            just_boarded = False
                             is_animating = True
                             current_cost = 0  # Inicializar costo en 0
                             has_ship = False  # Inicializar sin nave
@@ -952,17 +1115,119 @@ while running:
                             current_sprite_index = 0  # Resetear animación de sprites
                             astronaut_direction = "right"  # Dirección inicial
                             animation_completed = False  # Resetear estado de animación
-                                
-                                # Encontrar posición inicial del astronauta
+
+                            # Encontrar posición inicial del astronauta
                             for row in range(10):
                                 for col in range(10):
                                     if world[row][col] == 2:
                                         astronaut_pos = (row, col)
                                         break
-                                
+
+                            # Normalizar formato del camino: asegurar que el primer elemento sea la posición inicial
+                            if algorithm_path:
+                                try:
+                                    if algorithm_path[0] != astronaut_pos:
+                                        algorithm_path = [astronaut_pos] + algorithm_path
+                                except Exception:
+                                    pass
+
                             print(f"Camino encontrado: {len(algorithm_path)} pasos")
                             print(f"Costo total: {result['total_cost']}")
-                            current_state = SIMULATION_SCREEN    
+                            current_state = SIMULATION_SCREEN
+                    elif selected_algorithm == "depth":
+                        # Ejecutar búsqueda en profundidad
+                        print(f"Ejecutando algoritmo: {selected_algorithm}")
+                        start = time.perf_counter()
+                        result = execute_depth_search(world)
+                        elapsed = time.perf_counter() - start
+                        if result is None:
+                            result = {"success": False, "error": "No se obtuvo resultado"}
+                        result['time'] = elapsed
+
+                        if result and result.get("success"):
+                            # Guardar copia del mundo original
+                            original_world = [row[:] for row in world]  # Copia profunda
+
+                            algorithm_path = result["path"]
+                            algorithm_result = result
+                            current_step = 0
+                            collected_samples = set()
+                            ship_collected = set()
+                            just_boarded = False
+                            is_animating = True
+                            current_cost = 0  # Inicializar costo en 0
+                            has_ship = False  # Inicializar sin nave
+                            fuel_left = 0     # Sin combustible inicialmente
+                            current_sprite_index = 0  # Resetear animación de sprites
+                            astronaut_direction = "right"  # Dirección inicial
+                            animation_completed = False  # Resetear estado de animación
+
+                            # Encontrar posición inicial del astronauta
+                            for row in range(10):
+                                for col in range(10):
+                                    if world[row][col] == 2:
+                                        astronaut_pos = (row, col)
+                                        break
+
+                            # Normalizar formato del camino: asegurar que el primer elemento sea la posición inicial
+                            if algorithm_path:
+                                try:
+                                    if algorithm_path[0] != astronaut_pos:
+                                        algorithm_path = [astronaut_pos] + algorithm_path
+                                except Exception:
+                                    pass
+
+                            print(f"Camino encontrado: {len(algorithm_path)} pasos")
+                            print(f"Costo total: {result.get('total_cost', 0)}")
+                            current_state = SIMULATION_SCREEN
+                        else:
+                            error_msg = result.get("error", "Error desconocido")
+                            print(f"Error: {error_msg}")
+                    elif selected_algorithm == "a_star":
+                        print(f"Ejecutando algoritmo: {selected_algorithm}")
+                        start = time.perf_counter()
+                        result = a_star(world)
+                        elapsed = time.perf_counter() - start
+                        if result is None:
+                            result = {"success": False, "error": "No se obtuvo resultado"}
+                        result['time'] = elapsed
+
+                        if result and result.get("success"):
+                            # Guardar copia del mundo original
+                            original_world = [row[:] for row in world]  # Copia profunda
+
+                            algorithm_path = result["path"]
+                            algorithm_result = result
+                            current_step = 0
+                            collected_samples = set()
+                            ship_collected = set()
+                            just_boarded = False
+                            is_animating = True
+                            current_cost = 0  # Inicializar costo en 0
+                            has_ship = False  # Inicializar sin nave
+                            fuel_left = 0     # Sin combustible inicialmente
+                            current_sprite_index = 0  # Resetear animación de sprites
+                            astronaut_direction = "right"  # Dirección inicial
+                            animation_completed = False  # Resetear estado de animación
+
+                            # Encontrar posición inicial del astronauta
+                            for row in range(10):
+                                for col in range(10):
+                                    if world[row][col] == 2:
+                                        astronaut_pos = (row, col)
+                                        break
+
+                            # Normalizar formato del camino: asegurar que el primer elemento sea la posición inicial
+                            if algorithm_path:
+                                try:
+                                    if algorithm_path[0] != astronaut_pos:
+                                        algorithm_path = [astronaut_pos] + algorithm_path
+                                except Exception:
+                                    pass
+
+                            print(f"Camino encontrado: {len(algorithm_path)} pasos")
+                            print(f"Costo total: {result['total_cost']}")
+                            current_state = SIMULATION_SCREEN
                         else:
                             error_msg = result.get("error", "Error desconocido")
                             print(f"Error: {error_msg}")
@@ -973,7 +1238,7 @@ while running:
                     current_state = SELECT_ALGORITHM_SCREEN
             
             elif current_state == SIMULATION_SCREEN:
-                reset_button, back_button = draw_simulation_screen()
+                reset_button, back_button, report_button = draw_simulation_screen()
                 
                 if reset_button.collidepoint(mouse_pos):
                     # Reiniciar la simulación
@@ -981,6 +1246,8 @@ while running:
                     animation_counter = 0
                     is_animating = True
                     collected_samples = set()
+                    ship_collected = set()
+                    just_boarded = False
                     current_cost = 0      # Resetear costo a 0
                     has_ship = False      # Resetear nave
                     fuel_left = 0         # Resetear combustible
@@ -1001,10 +1268,12 @@ while running:
                 
                 elif back_button.collidepoint(mouse_pos):
                     current_state = GAME_SCREEN
-                    # Reset animation state and restore world
+                    # Resetear estado de animación y restaurar mundo
                     is_animating = False
                     current_step = 0
                     collected_samples = set()
+                    ship_collected = set()
+                    just_boarded = False
                     current_cost = 0
                     has_ship = False
                     fuel_left = 0
@@ -1017,6 +1286,20 @@ while running:
                         for row in range(10):
                             for col in range(10):
                                 world[row][col] = original_world[row][col]
+                # Si hay botón de informe y se hizo click (solo si la animación completó y hay resultado)
+                if report_button and report_button.collidepoint(mouse_pos) and animation_completed and algorithm_result:
+                    # Mostrar la ventana emergente del informe
+                    report_visible = True
+                    print("Mostrando informe...")
+                # Si el informe está visible, detectar click en el botón Cerrar
+                if report_visible:
+                    # close_rect se define cuando se dibuja el modal; recrear coordenadas
+                    box_w, box_h = 440, 300
+                    box_x = (size[0] - box_w) // 2
+                    box_y = (size[1] - box_h) // 2
+                    close_rect = pygame.Rect(box_x + box_w - 90, box_y + box_h - 45, 70, 30)
+                    if close_rect.collidepoint(mouse_pos):
+                        report_visible = False
         
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
@@ -1045,11 +1328,11 @@ while running:
                 # Tecla M para pausar/reanudar música
                 toggle_music()
     
-    # Update animation if in simulation mode
+    # Actualizar animación si estamos en modo simulación
     if current_state == SIMULATION_SCREEN and is_animating:
         update_animation()
     
-    # Draw based on current state
+    # Dibujar según el estado actual
     if current_state == TITLE_SCREEN:
         draw_title_screen()
     elif current_state == SELECT_ALGORITHM_SCREEN:
@@ -1062,6 +1345,51 @@ while running:
         draw_game_screen()
     elif current_state == SIMULATION_SCREEN:
         draw_simulation_screen()
+        # Si el informe está visible, dibujar la ventana emergente del informe encima de todo
+        if report_visible and algorithm_result:
+            # Dibujar fondo del modal
+            overlay = pygame.Surface(size, pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 180))  # semi-transparent
+            screen.blit(overlay, (0, 0))
+
+            # Caja del modal
+            box_w, box_h = 440, 300
+            box_x = (size[0] - box_w) // 2
+            box_y = (size[1] - box_h) // 2
+            pygame.draw.rect(screen, (30, 30, 30), (box_x, box_y, box_w, box_h))
+            pygame.draw.rect(screen, WHITE, (box_x, box_y, box_w, box_h), 2)
+
+            # Preparar líneas del informe
+            lines = []
+            lines.append(f"Algoritmo: {algorithm_result.get('algorithm', selected_algorithm)}")
+            lines.append(f"Éxito: {algorithm_result.get('success', False)}")
+            nodes = algorithm_result.get('nodes_expanded')
+            if nodes is not None:
+                lines.append(f"Nodos expandidos: {nodes}")
+            depth = algorithm_result.get('max_depth')
+            if depth is not None:
+                lines.append(f"Profundidad (max): {depth}")
+            t = algorithm_result.get('time')
+            if t is not None:
+                # Mostrar tiempo específicamente como tiempo de cómputo (wall-clock)
+                lines.append(f"Tiempo de cómputo (s): {t:.4f}")
+            if 'total_cost' in algorithm_result:
+                lines.append(f"Costo solución: {algorithm_result.get('total_cost')}")
+
+            # Dibujar líneas del informe
+            y_offset = box_y + 20
+            for line in lines:
+                txt = small_font.render(line, True, WHITE)
+                screen.blit(txt, (box_x + 20, y_offset))
+                y_offset += 30
+
+            # Botón Cerrar
+            close_rect = pygame.Rect(box_x + box_w - 90, box_y + box_h - 45, 70, 30)
+            pygame.draw.rect(screen, (100, 50, 50), close_rect)
+            pygame.draw.rect(screen, WHITE, close_rect, 2)
+            close_txt = subtitle_font.render("Cerrar", True, WHITE)
+            close_txt_rect = close_txt.get_rect(center=close_rect.center)
+            screen.blit(close_txt, close_txt_rect)
     
     pygame.display.flip()
     clock.tick(60)

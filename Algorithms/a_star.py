@@ -1,9 +1,34 @@
+# --------------------------------------------------------
+# Proyecto de inteligencia Artificial - Smart astronaut
+# Integrantes: 
+# Dylan Fernando Morales Rojas (2338330)
+# Johan Andres Ceballos Tabarez (2372229)
+#
+# Universidad: Universidad del Valle
+# Profesor: Oscar Bedoya
+#
+# Fecha de creación: 23 de septiembre del 2025
+# Última modificación: 24 de octubre del 2025
+#
+# Archivo: a_star.py
+# --------------------------------------------------------
+
 import heapq
 import random
 from Algorithms.objects import Node
 from itertools import count
 from Algorithms.complement import findAstro, findSampling, in_bounds,path_real
 from Algorithms.complement import costMove, reconstruct_path,heuristics, heuristic
+
+"""
+Ejecuta búsqueda A* (informada) para recolectar todas las muestras.
+
+Args:
+    grid: matriz del mundo (por ejemplo 10x10)
+
+Returns:
+    dict con formato similar a otros algoritmos: {"success": bool, "path": [...], "total_cost": float, "algorithm": str}
+"""
 
 
 def a_star(grid):
